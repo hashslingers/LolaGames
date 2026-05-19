@@ -569,19 +569,25 @@ const MOVE_ACCEL = 0.7;
 const MAX_VX = 6;
 const FRICTION_GROUND = 0.78;
 const FRICTION_AIR = 0.94;
-const GRAVITY_FLIP_CD = 45;
+const GRAVITY_FLIP_CD = 8;  // ~130ms debounce (design doc: "100ms debounce on gravity flip")
 
 // ============ SPRITE SHEET ============
+// Layout: 1920×2192px, 4 rows × 548px tall.
+// LEFT half (x=0–960): Idle/Jump/Attack/Win — each animation is 2 frames × 480px wide.
+// RIGHT half (x=960–1920): Walk/Run/Hit/Loss — each animation is packed as 4 frames × 240px.
+//   Clean frames land at col*240 positions 5 (x=1200) and 7 (x=1680).
+//   Cols 4 (x=960) and 6 (x=1440) are boundary bleed / back-angle frames — skip them.
+// frameOffsets: optional per-frame column delta array (defaults to [0,1,2,...])
 const CELL_W = 480, CELL_H = 548;
 const ANIMS = {
-  idle:   { row: 0, col: 1, frames: 1, fps: 4 },  // use first walk frame (full body standing)
-  walk:   { row: 0, col: 1, frames: 2, fps: 8 },
-  jump:   { row: 1, col: 0, frames: 2, fps: 6 },
-  run:    { row: 1, col: 2, frames: 2, fps: 10 },
-  attack: { row: 2, col: 0, frames: 2, fps: 8 },
-  hit:    { row: 2, col: 2, frames: 2, fps: 8 },
-  win:    { row: 3, col: 0, frames: 2, fps: 4 },
-  loss:   { row: 3, col: 2, frames: 2, fps: 4 },
+  idle:   { row: 0, col: 2, frames: 1, fps: 4,  cellW: 240 },               // x=480, just standing Lola
+  walk:   { row: 0, col: 5, frames: 2, fps: 8,  cellW: 240, frameOffsets: [0, 2] }, // x=1200, 1680 (skip col 6 bleed)
+  jump:   { row: 1, col: 0, frames: 2, fps: 6                },               // x=0, 480
+  run:    { row: 1, col: 5, frames: 2, fps: 10, cellW: 240, frameOffsets: [0, 2] }, // x=1200, 1680
+  attack: { row: 2, col: 0, frames: 2, fps: 8                },               // x=0, 480
+  hit:    { row: 2, col: 5, frames: 2, fps: 8,  cellW: 240, frameOffsets: [0, 2] }, // x=1200, 1680
+  win:    { row: 3, col: 0, frames: 2, fps: 4                },               // x=0, 480
+  loss:   { row: 3, col: 2, frames: 2, fps: 4                },               // x=960, 1440
 };
 const lolaSprite = new Image();
 lolaSprite.src = 'Lola-bit.png';
@@ -1153,8 +1159,10 @@ function drawLola(t) {
   if (l.facing === -1) ctx.scale(-1, 1);
   if (gravityDir === -1) ctx.scale(1, -1);
   if (spriteLoaded && processedSprite) {
-    const col = anim.col + l.animFrame;
-    ctx.drawImage(processedSprite, col * CELL_W, anim.row * CELL_H, CELL_W, CELL_H, -LOLA_W / 2, -LOLA_FOOT_OFFSET, LOLA_W, LOLA_H);
+    const cW = anim.cellW || CELL_W;
+    const frameOff = anim.frameOffsets ? anim.frameOffsets[l.animFrame] : l.animFrame;
+    const col = anim.col + frameOff;
+    ctx.drawImage(processedSprite, col * cW, anim.row * CELL_H, cW, CELL_H, -LOLA_W / 2, -LOLA_FOOT_OFFSET, LOLA_W, LOLA_H);
   } else {
     ctx.fillStyle = '#ffaabb';
     ctx.beginPath(); ctx.arc(0, -50, 25, 0, Math.PI*2); ctx.fill();
@@ -1180,7 +1188,9 @@ function drawCastleLola() {
   if (cl.facing === -1) ctx.scale(-1, 1);
   if (gravityDir === -1) ctx.scale(1, -1);
   if (spriteLoaded && processedSprite) {
-    ctx.drawImage(processedSprite, (anim.col + cl.animFrame) * CELL_W, anim.row * CELL_H, CELL_W, CELL_H, -LOLA_W/2, -LOLA_FOOT_OFFSET, LOLA_W, LOLA_H);
+    const cW = anim.cellW || CELL_W;
+    const frameOff = anim.frameOffsets ? anim.frameOffsets[cl.animFrame] : cl.animFrame;
+    ctx.drawImage(processedSprite, (anim.col + frameOff) * cW, anim.row * CELL_H, cW, CELL_H, -LOLA_W/2, -LOLA_FOOT_OFFSET, LOLA_W, LOLA_H);
   } else {
     ctx.fillStyle = '#ffaabb';
     ctx.beginPath(); ctx.arc(0, -50, 25, 0, Math.PI*2); ctx.fill();
@@ -2085,7 +2095,7 @@ window.addEventListener('keydown', e => {
       if (lola.onGround) { lola.vy = -JUMP_FORCE * gravityDir; playSound('jump'); }
     }
   }
-  if (k==='g'&&!princessSaved) doGravityFlip();
+  if (k==='g'&&!princessSaved&&!e.repeat) doGravityFlip();  // ignore OS key autorepeat
   if (k==='r'&&princessSaved) restartGame();
 });
 window.addEventListener('keyup', e => {
